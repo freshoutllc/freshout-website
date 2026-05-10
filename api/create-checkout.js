@@ -1,0 +1,92 @@
+const stripe = require(‘stripe’)(process.env.STRIPE_SECRET_KEY);
+
+module.exports = async (req, res) => {
+// Allow CORS
+res.setHeader(‘Access-Control-Allow-Origin’, ‘*’);
+res.setHeader(‘Access-Control-Allow-Methods’, ‘POST, OPTIONS’);
+res.setHeader(‘Access-Control-Allow-Headers’, ‘Content-Type’);
+
+if (req.method === ‘OPTIONS’) {
+return res.status(200).end();
+}
+
+if (req.method !== ‘POST’) {
+return res.status(405).json({ error: ‘Method not allowed’ });
+}
+
+try {
+const {
+serviceName,
+totalAmount,
+customerName,
+customerEmail,
+propertyType,
+address,
+date,
+time,
+hours,
+bedrooms,
+bathrooms,
+addons,
+} = req.body;
+
+```
+// Validate amount — must match what the website calculated
+if (!totalAmount || totalAmount < 100) {
+  return res.status(400).json({ error: 'Invalid amount' });
+}
+
+// Build description with all details
+const description = [
+  `📍 ${address}`,
+  `📅 ${date} at ${time} (${hours}h)`,
+  `🏠 ${propertyType}`,
+  bedrooms ? `🛏️ Bedrooms: ${bedrooms}` : null,
+  bathrooms ? `🚿 Bathrooms: ${bathrooms}` : null,
+  addons && addons.length > 0 ? `✦ Add-ons: ${addons.join(', ')}` : null,
+].filter(Boolean).join(' | ');
+
+// Create Stripe checkout session with LOCKED price
+const session = await stripe.checkout.sessions.create({
+  payment_method_types: ['card'],
+  mode: 'payment',
+  line_items: [
+    {
+      price_data: {
+        currency: 'usd',
+        product_data: {
+          name: `Fresh Out LLC — ${serviceName}`,
+          description: description,
+        },
+        // Amount in cents — LOCKED, customer cannot change
+        unit_amount: Math.round(totalAmount * 100),
+      },
+      quantity: 1,
+    },
+  ],
+  customer_email: customerEmail || undefined,
+  billing_address_collection: 'required',
+  phone_number_collection: { enabled: true },
+  metadata: {
+    customerName,
+    propertyType,
+    address,
+    date,
+    time,
+    hours: String(hours),
+    bedrooms: bedrooms || '',
+    bathrooms: bathrooms || '',
+    addons: addons ? addons.join(',') : '',
+  },
+  success_url: `https://freshoutllc.com?payment=success`,
+  cancel_url: `https://freshoutllc.com?payment=cancelled`,
+});
+
+return res.status(200).json({ url: session.url });
+```
+
+} catch (error) {
+console.error(‘Stripe error:’, error);
+return res.status(500).json({ error: error.message });
+}
+};p
